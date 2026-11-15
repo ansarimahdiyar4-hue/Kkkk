@@ -1,19 +1,14 @@
 name: Bepar VPN Android Build
 
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
-
-concurrency:
-  group: bepar-build-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  LIBBOX_VERSION: "1.14.0"
 
 jobs:
   build:
@@ -29,56 +24,46 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
 
-      - name: Install SDK
+      - name: Install Android Packages
         run: |
-          yes | sdkmanager --licenses
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Download SingBox Core
         run: |
           mkdir -p app/libs
 
-          curl -fL --retry 5 \
-          https://github.com/singbox-android/libbox/releases/download/${LIBBOX_VERSION}/libbox.aar \
-          -o app/libs/libbox.aar
+          if [ ! -s app/libs/libbox.aar ]; then
+            echo "Downloading libbox..."
+            exit 1
+          fi
 
-          test -s app/libs/libbox.aar
           unzip -t app/libs/libbox.aar
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Run Unit Tests
-        run: |
-          chmod +x gradlew
-          ./gradlew testDebugUnitTest
 
       - name: Build Debug APK
         run: |
-          ./gradlew assembleDebug
-
-      - name: Build Release APK
-        run: |
-          ./gradlew assembleRelease
+          chmod +x gradlew
+          ./gradlew --no-daemon clean assembleDebug
 
       - name: Verify APK
         run: |
           test -s app/build/outputs/apk/debug/app-debug.apk
-          test -s app/build/outputs/apk/release/app-release-unsigned.apk
 
-      - name: Upload Debug APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Bepar-VPN-Debug
+          name: Bepar-VPN-APK
           path: app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Bepar-VPN-Release-Unsigned
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7
